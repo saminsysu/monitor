@@ -1,0 +1,12 @@
+#!/bin/bash
+case $1 in
+	start) echo 'start linux agent'
+		start-stop-daemon -S --background --exec /home/sam/monitor/linux_agent.py
+	;;
+	stop) echo 'stop linux agent'
+		start-stop-daemon -k --name /home/sam/monitor/linux_agent.py
+	;;
+	*) echo 'start linux agent'
+		python /home/sam/monitor/linux_agent.py
+esac
+

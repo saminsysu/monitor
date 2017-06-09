@@ -1,14 +1,36 @@
+#!/usr/bin/env python
 #-*-coding:utf-8-*-
-#客户端收集监控数据，并定时发送给服务器
+'''客户端收集监控数据，并定时存储到数据库InfluxDB中'''
 import socket
 import psutil
 import json
 import time
+import os
 from influxdb import InfluxDBClient
 
-def monitor_data():
+def get_monitor_data():
 	monitor_data = []
 	#####################################
+	#获取CPU、网络、内存、硬盘等信息
+	#system information
+	sysInfo = os.uname()
+	sys_info = sysInfo[0] + ' ' +  sysInfo[2] + ' (' + sysInfo[4] + ')'
+	#network
+	network = {'measurement':'network',
+			'tags':{},
+			'fields':{}
+			}
+	network_tags = network['tags']
+	network_tags['host'] = '172.18.215.158'
+	pre_network_info = psutil.net_io_counters()
+	interval = 2 #seconds
+	time.sleep(interval)
+	network_info = psutil.net_io_counters()
+	network_fields = network['fields']
+	network_fields['bytes_send_per_second'] = (network_info.bytes_sent - pre_network_info.bytes_sent) / interval #B/s
+	network_fields['bytes_recv_per_second'] = (network_info.bytes_recv - pre_network_info.bytes_recv) / interval #B/s
+	monitor_data.append(network)
+
 	#cpu
 	#利用率
 	cpu = {'measurement':'cpu',
@@ -26,7 +48,20 @@ def monitor_data():
 	cpu_fields['cpu_count'] = psutil.cpu_count()
 	monitor_data.append(cpu)
 
-	#####################################
+	#average load, 1min, 5min, 15min
+	load_1, load_5, load_15 = os.getloadavg()
+	load = {'measurement':'average_load',
+			'tags':{},
+			'fields':{}
+			}
+	load_tags = load['tags']
+	load_tags['host'] = '172.18.215.158'
+	load_fields = load['fields']
+	load_fields['load_1'] = load_1
+	load_fields['load_5'] = load_5
+	load_fields['load_15'] = load_15
+	monitor_data.append(load)
+
 	#disk
 	disk = {'measurement':'disk',
 			'tags':{},
@@ -42,30 +77,70 @@ def monitor_data():
 	monitor_data.append(disk)
 	
 	#memory
-	#network
-	# monitor_data_str = json.dumps(monitor_data)
+	memory = {'measurement':'memory',
+			'tags':{},
+			'fields':{}
+			}
+	memory_info = psutil.virtual_memory()
+	memory_tags = memory['tags']
+	memory_tags['host'] = '172.18.215.158'
+	memory_fields = memory['fields']
+	memory_fields['memory_total'] = memory_info.total
+	memory_fields['memory_used'] = memory_info.used
+	memory_fields['memory_available'] = memory_info.available
+	monitor_data.append(memory)
+
+	#swap memory
+	swap = {'measurement':'swap',
+			'tags':{},
+			'fields':{}
+			}
+	swap_info = psutil.swap_memory()
+	swap_tags = swap['tags']
+	swap_tags['host'] = '172.18.215.158'
+	swap_fields = swap['fields']
+	swap_fields['swap_total'] = swap_info.total
+	swap_fields['swap_used'] = swap_info.used
+	swap_fields['swap_free'] = swap_info.free
+
+	monitor_data.append(swap)
+
+	#########################################################
+	#获取进程信息
+	for proc in psutil.process_iter():
+		process = {'measurement':'process',
+			'tags':{},
+			'fields':{}
+			}
+		process_tags = process['tags']
+		process_tags['host'] = '172.18.215.158'
+		process_fields = process['fields']
+		try:
+			#speeds up the retrieval of multiple process information at the same time		
+			with proc.oneshot():
+				process_tags['pid'] = proc.pid
+				process_fields['name'] = proc.name()
+				process_fields['username'] = proc.username()
+				# cpu使用率,第一次为0
+				process_fields['cpu_utilization'] = proc.cpu_percent()					
+		        # 内存使用率
+				process_fields['memory_utilization'] = proc.memory_percent()
+			if process_fields['cpu_utilization'] > 0:
+				print process_fields['cpu_utilization']
+		except psutil.NoSuchProcess:
+			pass
+		else:
+			monitor_data.append(process)
 	return monitor_data
 
+def send_data():
+	client = InfluxDBClient(host='127.0.0.1', port=8086, database='monitor')
+	interval = 15 #second
+	while True:
+		monitor_data = get_monitor_data()
+		client.write_points(monitor_data)
+		time.sleep(interval)
 
 if __name__ == '__main__':
-	# client_ip_port = ("127.0.0.1", 8647)
-	# server_ip_port = ("127.0.0.1", 5000)
-	# while True:
-	# 	#短连接。每一次发送数据都需要建立连接，发送完后断开连接
-	# 	#可以考虑使用长连接
-	# 	client_socket = socket.socket()
-	# 	client_socket.bind(client_ip_port)
-	# 	client_socket.connect(server_ip_port)
-	# 	client_socket.sendall(monitor_data())
-	# 	# print(monitor_data())
-	# 	ret = str(client_socket.recv(2048))
-	# 	print(ret)
-	# 	client_socket.close()
-	# 	time.sleep(15)
-	#将数据存储在数据库influxdb中
-	client = InfluxDBClient(host='127.0.0.1', port=8086, database='testDB')
-	monitor_data = monitor_data()
-	print monitor_data
-	client.write_points(monitor_data)
-
-
+	send_data()
+	
