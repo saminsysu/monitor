@@ -1,20 +1,29 @@
 #!/usr/bin/env python
 #-*-coding:utf-8-*-
-'''客户端收集监控数据，并定时存储到数据库InfluxDB中'''
-import socket
-import psutil
-import json
-import time
+'''
+monitor agent
+收集监控数据，并定时发送到数据库InfluxDB中
+'''
 import os
+import psutil
+import time
 from influxdb import InfluxDBClient
+from influxdb.exceptions import InfluxDBClientError
+
+init_network_info = 0
+interval = 15 #second
 
 def get_monitor_data():
+	global init_network_info
+	global interval
 	monitor_data = []
 	#####################################
-	#获取CPU、网络、内存、硬盘等信息
+	
 	#system information
 	sysInfo = os.uname()
 	sys_info = sysInfo[0] + ' ' +  sysInfo[2] + ' (' + sysInfo[4] + ')'
+
+	#获取CPU、网络、内存、硬盘等信息
 	#network
 	network = {'measurement':'network',
 			'tags':{},
@@ -22,13 +31,11 @@ def get_monitor_data():
 			}
 	network_tags = network['tags']
 	network_tags['host'] = '172.18.215.158'
-	pre_network_info = psutil.net_io_counters()
-	interval = 2 #seconds
-	time.sleep(interval)
 	network_info = psutil.net_io_counters()
 	network_fields = network['fields']
-	network_fields['bytes_send_per_second'] = (network_info.bytes_sent - pre_network_info.bytes_sent) / interval #B/s
-	network_fields['bytes_recv_per_second'] = (network_info.bytes_recv - pre_network_info.bytes_recv) / interval #B/s
+	network_fields['bytes_send_per_second'] = (network_info.bytes_sent - init_network_info.bytes_sent) / interval #B/s
+	network_fields['bytes_recv_per_second'] = (network_info.bytes_recv - init_network_info.bytes_recv) / interval #B/s
+	init_network_info = network_info
 	monitor_data.append(network)
 
 	#cpu
@@ -44,6 +51,7 @@ def get_monitor_data():
 	cpu_fields['user_utilization'] = cpu_utilization.user
 	cpu_fields['system_utilization'] = cpu_utilization.system
 	cpu_fields['idle_utilization'] = cpu_utilization.idle
+	cpu_fields['iowait'] = cpu_utilization.iowait
 	#逻辑cpu数
 	cpu_fields['cpu_count'] = psutil.cpu_count()
 	monitor_data.append(cpu)
@@ -116,31 +124,40 @@ def get_monitor_data():
 		process_tags['host'] = '172.18.215.158'
 		process_fields = process['fields']
 		try:
-			#speeds up the retrieval of multiple process information at the same time		
+			#speeds up the retrieval of multiple process information at the same time
 			with proc.oneshot():
 				process_tags['pid'] = proc.pid
 				process_fields['name'] = proc.name()
 				process_fields['username'] = proc.username()
-				# cpu使用率,第一次为0
+				# cpu使用率
 				process_fields['cpu_utilization'] = proc.cpu_percent()					
 		        # 内存使用率
 				process_fields['memory_utilization'] = proc.memory_percent()
-			if process_fields['cpu_utilization'] > 0:
-				print process_fields['cpu_utilization']
+				if process_fields['cpu_utilization'] <= 0 and process_fields['memory_utilization'] <= 0:
+					continue
 		except psutil.NoSuchProcess:
 			pass
 		else:
 			monitor_data.append(process)
 	return monitor_data
 
-def send_data():
-	client = InfluxDBClient(host='127.0.0.1', port=8086, database='monitor')
-	interval = 15 #second
-	while True:
-		monitor_data = get_monitor_data()
-		client.write_points(monitor_data)
+def send_monitor_data():
+	global init_network_info
+	global interval
+	try:
+		client = InfluxDBClient(host='127.0.0.1', port=8086, database='monitor')
+	except:
+		print("There is an error with connection to InfluxDB server!!!!")
+	else:
+		init_network_info = psutil.net_io_counters()
 		time.sleep(interval)
+		while True:
+			monitor_data = get_monitor_data()
+			try:
+				client.write_points(monitor_data)
+			except InfluxDBClientError, e:
+				print(e.content) 
+			time.sleep(interval)
 
 if __name__ == '__main__':
-	send_data()
-	
+	send_monitor_data()
