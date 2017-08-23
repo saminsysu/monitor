@@ -1,0 +1,42 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides: monitor-agent
+# Short-Description: Start, stop, restart monitor-agent
+# Description: monitor-agent is monitor component of vinzor
+# Required-Start: $all
+# Required-Stop: 
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+### END INIT INFO
+
+. /lib/lsb/init-functions
+
+DAEMON="/etc/monitor-agent/monitor_agent.py"
+DAEMON_PIDFILE="/etc/monitor-agent/monitor-agent.pid"
+DAEMON_NAME="monitor-agent"
+
+case $1 in
+    start)
+        log_daemon_msg "Starting system $DAEMON_NAME daemon"
+        start-stop-daemon -S --background -m --pidfile $DAEMON_PIDFILE --user root --startas $DAEMON
+        log_end_msg $?
+    ;;
+    stop)
+        log_daemon_msg "Stoping system $DAEMON_NAME daemon"
+        start-stop-daemon -K --pidfile $DAEMON_PIDFILE
+        log_end_msg $?
+    ;;
+    restart)
+        log_daemon_msg "Restarting system $DAEMON_NAME daemon"
+        $0 stop
+        $0 start
+        log_end_msg $?
+    ;;
+    *) 
+        N=/etc/init.d/$DAEMON_NAME
+        echo "Usage: $N {start|stop|restart}"
+        exit 1
+    ;;
+esac
+exit 0

