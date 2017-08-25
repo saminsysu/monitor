@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#cmd bash -c "$(curl "http://172.18.215.158:5000/api/v1.0/install_agent.sh")"
+
 set -e
 set -o pipefail
 
@@ -14,13 +16,14 @@ else
     sudo_cmd='sudo'
 fi
 
-$sudo_cmd apt-get install gcc python-dev python-pip
-$sudo_cmd apt-get install python-psutil
-$sudo_cmd apt-get install python-influxdb
-
 if [ -e $agent_dir ]; then
-	$sudo_cmd rm -rf $agent_dir
+	echo "Directory ${agent_dir} has already existed! If you want to install the agent, please delete the directory ${agent_dir} first!"
+	exit 0
 fi
+
+$sudo_cmd apt-get install gcc python-dev python-pip
+$sudo_cmd pip install psutil
+$sudo_cmd pip install influxdb
 
 $sudo_cmd mkdir $agent_dir
 
