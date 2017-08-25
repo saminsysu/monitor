@@ -28,7 +28,8 @@ $sudo_cmd pip install influxdb
 $sudo_cmd mkdir $agent_dir
 
 if [ -e "${init_dir}monitor-agent" ]; then
-	$sudo_cmd rm "${init_dir}monitor-agent"
+	echo "File ${init_dir}monitor-agent has already existed. If you want to install the agent, please delete the file ${init_dir}monitor-agent first."
+	exit 0
 fi
 
 $sudo_cmd curl -o "${agent_dir}monitor_agent.py" "${server_url}monitor_agent.py"
